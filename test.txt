@@ -1,0 +1,6 @@
+osm {
+	hello world
+}
+osm {
+	hello china
+}

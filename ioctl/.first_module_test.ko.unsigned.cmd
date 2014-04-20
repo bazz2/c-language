@@ -1,0 +1,1 @@
+cmd_/opt/c-language/ioctl/first_module_test.ko.unsigned := ld -r -m elf_x86_64 -T /usr/src/kernels/2.6.32-71.el6.x86_64/scripts/module-common.lds --build-id -o /opt/c-language/ioctl/first_module_test.ko.unsigned /opt/c-language/ioctl/first_module_test.o /opt/c-language/ioctl/first_module_test.mod.o 

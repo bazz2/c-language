@@ -1,0 +1,1 @@
+<xml><user>root</user><pwd>infocore</pwd></xml>
