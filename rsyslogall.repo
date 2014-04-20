@@ -1,0 +1,48 @@
+[rsyslog-v5-stable]
+name=Adiscon Rsyslog v5-stable for CentOS-$releasever-$basearch
+baseurl=http://rpms.adiscon.com/v5-stable/epel-$releasever/$basearch
+enabled=0
+gpgcheck=0
+protect=1
+
+[rsyslog-v6-beta]
+name=Adiscon Rsyslog v6-beta for CentOS-$releasever-$basearch
+baseurl=http://rpms.adiscon.com/v6-beta/epel-$releasever/$basearch
+enabled=0
+gpgcheck=0
+protect=1
+
+[rsyslog-v6-stable]
+name=Adiscon Rsyslog v6-stable for CentOS-$releasever-$basearch
+baseurl=http://rpms.adiscon.com/v6-stable/epel-$releasever/$basearch
+enabled=0
+gpgcheck=0
+protect=1
+
+[rsyslog-v7-beta]
+name=Adiscon Rsyslog v7-beta for CentOS-$releasever-$basearch
+baseurl=http://rpms.adiscon.com/v7-beta/epel-$releasever/$basearch
+enabled=0
+gpgcheck=0
+protect=1
+
+[rsyslog-v7-devel]
+name=Adiscon Rsyslog v7-devel for CentOS-$releasever-$basearch
+baseurl=http://rpms.adiscon.com/v7-devel/epel-$releasever/$basearch
+enabled=0
+gpgcheck=0
+protect=1
+
+[rsyslog-v7-stable]
+name=Adiscon Rsyslog v7-stable for CentOS-$releasever-$basearch
+baseurl=http://rpms.adiscon.com/v7-stable/epel-$releasever/$basearch
+enabled=0
+gpgcheck=0
+protect=1
+
+[rsyslog-v8-stable]
+name=Adiscon Rsyslog v8-stable for CentOS-$releasever-$basearch
+baseurl=http://rpms.adiscon.com/v8-stable/epel-$releasever/$basearch
+enabled=1
+gpgcheck=0
+protect=1
