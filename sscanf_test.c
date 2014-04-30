@@ -25,16 +25,20 @@ void main()
 	printf("res: %d\n%s\n", res, lvpath);
 	printf("left: %s\n", str);
 }
+#endif
 
+#if 1
 void main()
 {
-	const char *str = "1 2 3abc4";
+	const char *str = "1 2 3abc5";
 	uint64_t tmp;
 	int res = sscanf(str, "%d%*[^0-9]%d%*[^0-9]%d%*[^0-9]%d%*[^0-9]%d%*[^0-9]%d", &tmp, &tmp, &tmp, &tmp, &tmp, &tmp);
+	//int res = sscanf(str, "%d%*[^0-9]%d%*[^0-9]%d%*[^0-9]%d%*[^0-9]%d%*[^0-9]%d", &tmp, &tmp, &tmp, &tmp, &tmp, &tmp);
 	printf("res: %d\n", res);
 	printf("tmp: %u\n", tmp);
 }
 #endif
+
 #if 0
 void main()
 {
@@ -52,7 +56,7 @@ void main()
 }
 
 #endif
-#if 1
+#if 0
 void main()
 {
 	const char *ip = "a=\"168.3.1\"";

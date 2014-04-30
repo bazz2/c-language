@@ -66,20 +66,20 @@ printf("++++++++++++++++++++++++++++\n\n");
 
 	memset(&timeinfo, 0, sizeof (struct tm));
 	timeinfo.tm_year = 2014-1900;
-	timeinfo.tm_mon = 3;
-	timeinfo.tm_mday = 21;
-	timeinfo.tm_hour = 12;
-	timeinfo.tm_min = 30;
+	timeinfo.tm_mon = 4;
+	timeinfo.tm_mday = 6;
+	timeinfo.tm_hour = 9;
+	timeinfo.tm_min = 37;
 
 	strftime(tmp, 512, "%Y/%m/%d %I:%M:%S", &timeinfo);
-	printf("is dst: %d\n", timeinfo.tm_isdst);
+//	printf("is dst: %d\n", timeinfo.tm_isdst);
 	printf("%s\n", tmp);
 
 	timep = mktime(&timeinfo);
-//	printf("timep: %d\n", timep);
+	printf("timep: %d\n", timep);
 	p=localtime(&timep);
 	strftime(tmp, 512, "%Y/%m/%d %I:%M:%S", p);
-	printf("is dst: %d\n", p->tm_isdst);
+//	printf("is dst: %d\n", p->tm_isdst);
 	printf("%s\n", tmp);
 #if 0
 	printf("year: %d\n", p->tm_year);
