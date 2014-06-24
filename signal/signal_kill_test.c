@@ -2,7 +2,7 @@
 #include<signal.h>
 #include<pthread.h>
 
-#if 0
+#if 1
 void print1()
 {
 	printf("child thread%d\n", pthread_self());
@@ -15,8 +15,8 @@ void thread()
 	while(1)
 	{
 		printf("thread%d run %d second\n",pthread_self(), i);
-		sleep(2);
-		i += 2;
+		sleep(10);
+		i += 10;
 	}
 }
 void print()
@@ -28,18 +28,10 @@ void main()
 	pthread_t thid[3];
 	pthread_create(&thid[0], NULL, (void*)thread, NULL);
 	pthread_detach(thid[0]);
-	pthread_create(&thid[1], NULL, (void*)thread, NULL);
-	pthread_detach(thid[1]);
-	pthread_create(&thid[2], NULL, (void*)thread, NULL);
-	pthread_detach(thid[2]);
-	sleep(3);
-	signal(SIGUSR1, print);
-	sleep(3);
+	sleep(1);
+//	signal(SIGUSR1, print);
 	printf("send kill thread%d\n", thid[0]);
 	pthread_kill(thid[0], SIGUSR1);
-	sleep(3);
-	printf("send kill thread%d\n", thid[1]);
-	pthread_kill(thid[1], SIGUSR1);
 	sleep(100);
 }
 #else

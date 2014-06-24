@@ -10,17 +10,6 @@
 #define MIN(x,y) (x)<(y)?(x):(y)
 #define MAX(x,y) (x)>(y)?(x):(y)
 
-static int find_line_head_in_buf(const char *buf)
-{
-	int i = 0;
-
-	while(*(buf+i) != '\n') {
-		i++;
-	}
-
-	return i + 1;
-}
-
 int main()
 {
 	int fd;
@@ -34,7 +23,6 @@ int main()
 	if (fd == -1)
 		return -1;
 
-printf("%d\n", fd);
 	start_pos = lseek(fd, 0, SEEK_CUR);
 	if (start_pos == -1) /* open pipe, FIFO or socket, do nothing */
 		goto out;
@@ -61,7 +49,6 @@ printf("%d\n", fd);
 		idx = 0;
 		if (pos != 0) {
 			/* haven't reach start of file */
-//			idx = find_line_head_in_buf(buf);
 			char_tmp = strchr(buf, '\n');
 			idx = char_tmp - buf;
 			pos = lseek(fd, pos+idx, SEEK_SET);
