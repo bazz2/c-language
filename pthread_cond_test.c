@@ -26,6 +26,8 @@ void *thread2(void *junk)
 	while (i < 6) {
 		pthread_mutex_lock(&mutex);
 		if (i % 3 != 0) {
+			printf("thread2: cond signal #%d\n", i);
+			pthread_cond_signal(&cond);
 			printf("thread2: wait #%d\n", i);
 			pthread_cond_wait(&cond, &mutex);
 			printf("thread2: wait end #%d\n", i);

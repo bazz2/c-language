@@ -27,7 +27,7 @@ void main()
 }
 #endif
 
-#if 1
+#if 0
 void main()
 {
 	const char *str = "1 2 3abc5";
@@ -64,5 +64,27 @@ void main()
 
 	sscanf(ip, "%*[^\"]\"%[^\"]", tmp);
 	printf("%s\n", tmp);
+}
+#endif
+#if 0
+void main()
+{
+	const char *host = "hostf10f";
+	int tmp = -1;
+	int ret = -1;
+
+	ret = sscanf(host, "host%d", &tmp);
+	printf("ret:%d; tmp:%d\n", ret, tmp);
+}
+#endif
+#if 1
+void main()
+{
+	const char *ip_port = "192.168.3.98:9997";
+	char ip[32] = {0};
+	int port = 0, ret;
+
+	ret = sscanf(ip_port, "%30[^:]:%d", ip, &port);
+	printf("[%d] %s : %d\n", ret, ip, port);
 }
 #endif
