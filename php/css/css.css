@@ -1,0 +1,17 @@
+body {font:12px Tahoma;margin:0px;text-align:center;background:#FFFFFF}
+a:link,a:visited {font-size:12px;text-decoration:none}
+a:hover{}
+#container {width:100%;margin:0 auto;background:#00FF00}
+#Header {background:url(logo.jpg)no-repeat}
+#menu {padding:221px 20px 0 0}
+#menu ul {float:right;list-style:none;margin:0px}
+#menu ul li {float:left;margin:0 10px;display:block;line-height:28px}
+#menu ul li a:link,#menu ul li a:visited {font-weight:bold;color:#0000FF}
+#menu ul li a:hover{}
+.menuDiv {width:1px;height:20px;background:#999}
+/*
+#PageBody {width:800px;margin:0 auto;height:400px;background:#CCFF00}
+#Sidebar {width:400px;margin:0 auto;height:200px;background:#CCFF99}
+#MainBody {width:300px;margin:0 auto;height:100px;background:#FFCC00}
+#Footer {width:500px;margin:0 auto;height:50px;background:#00FFFF}
+*/
