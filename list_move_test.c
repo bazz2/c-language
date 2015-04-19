@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <osn/list.h>
+#include <list.h>
 
 struct en {
 	int i;
@@ -37,8 +37,11 @@ printf("\n ens2======\n");
 	list_for_each_entry(en, &ens2, list)
 		printf("%d\n", en->i);
 
-	list_splice(&ens2, &ens1);
+	list_splice_init(&ens2, &ens1);
 printf("\n ens1(include ens2)======\n");
 	list_for_each_entry(en, &ens1, list)
+		printf("%d\n", en->i);
+printf("\n ens2======\n");
+	list_for_each_entry(en, &ens2, list)
 		printf("%d\n", en->i);
 }

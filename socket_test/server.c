@@ -28,13 +28,11 @@ int tcpserver() {
     server_addr.sin_port = htons(SERVER_PORT);  
     server_addr.sin_addr.s_addr = INADDR_ANY;  
   
-    // bind  
     if (bind(sockfd, (struct sockaddr *) &server_addr, sizeof(struct sockaddr)) == -1) {  
         perror("bind error\n");  
         return 1;  
     }  
   
-    // listen  
     if (listen(sockfd, MAX_REQUEST_QUEUE) == -1) {  
         perror("listen error\n");  
         return 1;  
@@ -42,13 +40,11 @@ int tcpserver() {
   
     int recv_size;  
     int sin_size = sizeof(struct sockaddr_in);  
+    if ((newfd = accept(sockfd, (struct sockaddr *) &client_addr, &sin_size)) == -1) {  
+        perror("accept error\n");  
+    };
     while (1) {  
-        // accepte  
-        if ((newfd = accept(sockfd, (struct sockaddr *) &client_addr, &sin_size)) == -1) {  
-            perror("accept error\n");  
-            continue;  
-        };  
-  
+        sleep(2);
         // receive data  
         if ((recv_size = recv(newfd, buf, MAX_DATA_SIZE, 0)) == -1) {  
             perror("recv error\n");  

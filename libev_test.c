@@ -24,7 +24,7 @@ int main()
 	ev_io_init(&stdin_watcher, stdin_cb, 0, EV_READ);
 	ev_io_start(loop, &stdin_watcher);
 
-	ev_timer_init(&timeout_watcher, timeout_cb, 5.5, 0);
+	ev_timer_init(&timeout_watcher, timeout_cb, 5.5, 5.5);
 	ev_timer_start(loop, &timeout_watcher);
 
 	ev_run(loop, 0);

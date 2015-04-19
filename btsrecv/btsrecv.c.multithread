@@ -1,0 +1,994 @@
+/*
+ * 名称: 伪基站通信服务器端
+ */
+#include <ebdgdl.h>
+#include <ebdgml.h>
+#include <omcpublic.h>
+#include <mobile2g.h>
+#include <pthread.h>
+#include <sys/epoll.h>
+
+#include "list.h"
+#include "curl_easy.h"
+
+#define VERSION "0.0.1"
+#define DEBUG_BARE 1
+#define DEBUG_BERBOSE 0
+
+#define MAX_EVENTS 10
+#define TIMEOUT (60*5)
+#define PROTOCOL_MAX_LEN (1024*16)
+
+#define RECV_TYPE_GPRSSERVALARM 1 /* peer is gprsserv*/
+#define RECV_TYPE_BTSREQUEST 2 /* peer is BTS */
+
+#define PT_LOGIN 5 /* BTS login */
+#define PT_RESPONSE 9
+#define PT_ADJUSTTIME 14 /* 0x0e */
+#define PT_BUSINESS 31
+#define PT_CALL 13
+#define MIN_CALL_SESSION_ID 214748364
+typedef struct tagHEADERSTRU
+{
+    uint16_t len;
+    uint8_t type;
+    uint8_t reserve;
+    uint32_t session_id;
+    uint16_t check;
+} __attribute__((packed)) PTHEADERSTRU;
+
+typedef struct tagLOGINSTRU
+{
+    PTHEADERSTRU header;
+    uint8_t conn_type; /* 0 - wire; 1 - CDMA; 2 - GPRS; 3 - WIFI */
+    uint8_t uuid_len;
+    uint32_t software_ver;
+    uint32_t protocol_ver;
+    uint32_t bandwidth; /* unit: byte/s */
+    uint16_t rssi; /* receiced signal strength indicator, just for CDMA & GPRS */
+    uint16_t bit_err_ratio;
+    uint8_t usr_len;
+    uint8_t passwd_len;
+    char uuid_usr_passwd[256]; /* variable length, what's the f**k */
+    /* uuid: IMEI for CDMA/GPRS, MAC for wire */
+} __attribute__((packed)) PTLOGINSTRU;
+
+#define OK 0
+#define ERROR_USER 1 /* invalid user */
+#define ERROR_PASSWD 2
+#define ERROR_CANCELTASK 3
+#define ERROR_CHECK 4 /* unsupport this check */
+#define ERROR_ENCRYPT 5 /* unsupport this encrypt */
+#define ERROR_INPROGRESS 6 /* in progressing... */
+#define ERROR_PROTOCOL 7 /* unsupport this protocol */
+#define ERROR_REFUSE 8 /* refuse service */
+#define ERROR_TIMEOUT 9
+#define ERROR_CHECKERROR 10 /* failed to check */
+#define ERROR_EXIST 11 /* no such file or directory */
+#define ERROR_DATA_CONNECT 12 /* unsupport data connection */
+#define ERROR_DELETE_FILE 13 /* failed to delete file */
+#define ERROR_FORMAT 14 /* format error */
+#define ERROR_NOPERM 15 /* permission denied */
+typedef struct tagRESPONSESTRU
+{
+    PTHEADERSTRU header;
+    uint8_t error_code; /* 0 - success; else - error */
+    uint8_t error_content; /* just a byte, why? */
+} __attribute__((packed)) PTRESPONSESTRU;
+
+#define DEV_STATUS_DSP_ERR(x) (x&0x02)
+#define DEV_STATUS_ARM_ERR(x) (x&0x04)
+#define DEV_STATUS_FPGA_ERR(x) (x&0x08)
+#define DEV_STATUS_GPS_ERR(x) (x&0x10)
+#define DEV_STATUS_PLL_ERR(x) (x&0x20) /* phase-locked loop */
+typedef struct tagADJUSTTIMESTRU
+{
+    PTHEADERSTRU header;
+    uint32_t ostime; /* frontend time */
+    uint32_t outime;
+    uint32_t rstime; /* background time */
+    uint32_t rutime;
+    uint8_t devStatus; /* 0xff - initiating; status&0x01==1 - init complete; else failed */
+} __attribute__((packed)) PTADJUSTTIMESTRU;
+
+#define SUB_PROTO_SMS 1
+#define SUB_PROTO_CALL 2
+#define SUB_PROTO_LOGIN 3 /* mobile phone login */
+#define SUB_PROTO_PAGE 4
+#define OPER_CMCC 0 /* China Mobile */
+#define OPER_CUT 1 /* China United Telecommunications */
+#define OPER_CTC 2 /* China Telecommunications Corporation */
+typedef struct tagPTBUSINESSSTRU
+{
+    PTHEADERSTRU header;
+    uint8_t subProto; /* such as SUB_PROTO_SMS */
+    uint8_t reserve;
+    uint8_t oper; /* such as OPER_CMCC */
+    char content[PROTOCOL_MAX_LEN];
+} __attribute__((packed)) PTBUSINESSSTRU;
+
+#define COMMAND_COMMAND 0
+#define COMMAND_RESUTL 1
+typedef struct tagTPCALLSTRU
+{
+    PTHEADERSTRU header;
+    uint8_t cmd;
+    uint8_t reserve;
+    char content[PROTOCOL_MAX_LEN];
+} __attribute__((packed)) PTCALLSTRU;
+
+typedef struct tagALARMSTRU
+{
+    struct list_head list;
+    int num; /* record how many times this NE send alarm in this period,
+                  only used by thread 'BtsDetective' */
+    int exist; /* check if this node exist in one detective period,
+                  only used by thread 'BtsDetective' */
+    time_t time;
+    char neName[512];
+    char channel[512];
+} ALARMSTRU;
+typedef struct tagIMSISTRU
+{
+    char smsContent[128];
+    char imsi[32];
+    char imei[32]; /* when phone login, it exists */
+    char time[32]; /* send/call/login time */
+    char smsFmt[16];
+    char phoneNum[16];
+    int subProto; /* a.k.a business type, such as SUB_PROTO_SMS */
+    int oper; /* such as OPER_CMCC */
+    struct list_head list;
+} IMSISTRU;
+
+int gSessionIdIndex;
+int gnCacheAlarm; /* if cache alarms or not */
+int gnBtsSockFd; /* all threads may use bts's socketfd */
+pthread_t gBtsThreadId; /* only one long connection thread */
+struct list_head gstruImsis;
+struct list_head gstruAlarms;
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static int _do_read(int fd, void *buf, size_t len)
+{
+    int ret;
+
+    while (len) {
+        ret = read(fd, buf, len);
+        if (ret == 0) {
+            PrintDebugLog(DBG_HERE,"%d bytes left\n", len);
+            return 0;
+        }
+        if (ret < 0) {
+            if (errno == EINTR)
+                continue;
+            if (errno == EAGAIN )
+                continue;
+
+            PrintErrorLog(DBG_HERE,"Failed to read: %s\n", strerror(errno));
+            return -1;
+        }
+
+        len -= ret;
+        buf = (char *)buf + ret;
+    }
+
+    return 0;
+}
+
+static int _do_write(int fd, const void *buf, size_t len)
+{
+    int send, total;
+
+    total = 0;
+    while (len) {
+        send = write(fd, buf + total, len);
+        if (send == 0) {
+            PrintDebugLog(DBG_HERE,"%d bytes left\n", len);
+            return 0;
+        }
+        if (send < 0) {
+            if (errno == EAGAIN || errno == EINTR)
+                continue;
+            PrintErrorLog(DBG_HERE,"Failed to write: %s\n", strerror(errno));
+            return -1;
+        }
+
+        len -= send;
+        total += send;
+    }
+
+    return 0;
+}
+
+/* TODO: parse alarm */
+static ALARMSTRU *_str2alarm(char *pszAlarm)
+{
+    ALARMSTRU *pstruAlarm;
+
+    printf("%s\n", pszAlarm);
+    pstruAlarm = calloc(1, sizeof (ALARMSTRU));
+    if (!pstruAlarm)
+    {
+        PrintErrorLog(DBG_HERE,"Failed to allocate memory\n");
+        return NULL;
+    }
+    strncpy(pstruAlarm->neName, "hello world", sizeof (pstruAlarm->neName));
+    pstruAlarm->time = time(NULL);
+
+    return pstruAlarm;
+}
+/**
+ * if there is any imsi in gszImsis, add alarm into gstruAlarms 
+ */
+void _BtsProcessGprsServAlarm(char *pszAlarm)
+{
+    int cache;
+    ALARMSTRU *pstruAlarm;
+
+    pthread_mutex_lock(&mutex);
+    cache = gnCacheAlarm;
+    pthread_mutex_unlock(&mutex);
+    if (!cache)
+        return;
+
+    pstruAlarm = _str2alarm(pszAlarm);
+
+    pthread_mutex_lock(&mutex);
+    list_add(&pstruAlarm->list, &gstruAlarms);
+    pthread_mutex_unlock(&mutex);
+}
+
+#if DEBUG_BARE
+static void __printInputBare(void *input)
+{
+    PTHEADERSTRU *pstruHeader = input;
+    int len = ntohs(pstruHeader->len);
+    int i;
+    unsigned char *p = (unsigned char*)input;
+    printf("Barely input(len=%d): ", len);
+    if (len > 50)
+        len = 50;
+    for(i = 0; i < len; i++)
+    {
+        printf("%.2x ", p[i]);
+    }
+    printf("\n");
+}
+static void __printOutputBare(void *output)
+{
+    PTHEADERSTRU *pstruHeader = output;
+    int len = ntohs(pstruHeader->len);
+    int i;
+    unsigned char *p = (unsigned char*)output;
+    printf("Barely otput(len=%d): ", len);
+    if (len > 50)
+        len = 50;
+    for(i = 0; i < len; i++)
+    {
+        printf("%.2x ", p[i]);
+    }
+    printf("\n");
+}
+#else
+static void __printInputBare(void *input)
+{
+    return;
+}
+static void __printOutputBare(void *output)
+{
+    return;
+}
+#endif
+#if DEBUG_VERBOSE
+static void __printHeader(void *input)
+{
+    PTHEADERSTRU *pstruHeader = input;
+    int len = ntohs(pstruHeader->len);
+    int session_id= ntohl(pstruHeader->session_id);
+    printf("  header->len: %d\n", len);
+    printf("  header->type: %d\n", pstruHeader->type);
+    printf("  header->session: %d\n", session_id);
+    printf("  header->checke: %d\n", pstruHeader->check);
+}
+static void __printLogin(PTLOGINSTRU *input)
+{
+    char tmp[128] = {0};
+    __printHeader((void *)input);
+    printf("  login->conn type: %d\n", input->conn_type);
+    printf("  login->uuid len: %d\n", input->uuid_len);
+    printf("  login->soft ver: %d\n", input->software_ver);
+    printf("  login->proto ver: %d\n", input->protocol_ver);
+    printf("  login->bandwidth: %d\n", input->bandwidth);
+    strncpy(tmp, input->uuid_usr_passwd, input->uuid_len);
+    printf("  login->uuid: %s\n", tmp);
+    strncpy(tmp, input->uuid_usr_passwd+input->uuid_len, input->usr_len);
+    printf("  login->user: %s\n", tmp);
+    strncpy(tmp, input->uuid_usr_passwd+input->uuid_len+input->usr_len, input->passwd_len);
+    printf("  login->passwd: %s\n", tmp);
+}
+static void __printLoginResp(PTRESPONSESTRU *pstruResp)
+{
+    __printHeader((void *)pstruResp);
+    printf("  resp->error code: %d\n", pstruResp->error_code);
+}
+static void __printAdjusttime(PTADJUSTTIMESTRU *pstruAdj)
+{
+    __printHeader((void *)pstruAdj);
+    printf("  adjust->ostime: %d\n", ntohl(pstruAdj->ostime));
+    printf("  adjust->outime: %d\n", ntohl(pstruAdj->outime));
+    printf("  adjust->rstime: %d\n", ntohl(pstruAdj->rstime));
+    printf("  adjust->rutime: %d\n", ntohl(pstruAdj->rutime));
+    printf("  adjust->devStatus: %d\n", pstruAdj->devStatus);
+}
+static void __printBusiness(PTBUSINESSSTRU *input)
+{
+    if (!input)
+        return;
+
+    printf("  business type: %d\n", input->subProto);
+    printf("  business oper: %d\n", input->oper);
+}
+static void __printImsi(IMSISTRU *input)
+{
+    if (!input)
+        return;
+    printf("  imsi time: %s\n", input->time);
+    printf("  imsi ismi: %s\n", input->imsi);
+    printf("  imsi subProto: %d\n", input->subProto);
+    printf("  imsi oper: %d\n", input->oper);
+    printf("  imsi phoneNum: %s\n", input->phoneNum);
+    printf("  imsi smsFmt: %s\n", input->smsFmt);
+    printf("  imsi smsContent: %s\n", input->smsContent);
+    printf("  imsi imei: %s\n", input->imei);
+}
+#else
+static void __printHeader(void *input)
+{
+    return;
+}
+static void __printLogin(PTLOGINSTRU *input)
+{
+    __printHeader((void *)input);
+    return;
+}
+static void __printLoginResp(PTRESPONSESTRU *pstruResp)
+{
+    __printHeader((void *)pstruResp);
+    return;
+}
+static void __printAdjusttime(PTADJUSTTIMESTRU *pstruAdj)
+{
+    __printHeader((void *)pstruAdj);
+    return;
+}
+static void __printBusiness(PTBUSINESSSTRU *input)
+{
+    return;
+}
+static void __printImsi(IMSISTRU *input)
+{
+    return;
+}
+#endif
+
+PTRESPONSESTRU *_BtsProcessLogin(PTLOGINSTRU *input)
+{
+    uint16_t len;
+    PTRESPONSESTRU *pstruResp;
+    PTHEADERSTRU *pstruHeaderOut, *pstruHeaderIn; 
+
+    if (!input)
+        return NULL;
+
+    pstruResp = calloc(1, sizeof (PTRESPONSESTRU));
+    if (!pstruResp)
+    {
+        PrintErrorLog(DBG_HERE,"Failed to allocate memory\n");
+        return NULL;
+    }
+
+    pstruHeaderIn = (PTHEADERSTRU*)input;
+    pstruHeaderOut = (PTHEADERSTRU*)pstruResp;
+    memcpy(pstruHeaderOut, pstruHeaderIn, sizeof (PTHEADERSTRU));
+    len = sizeof (PTRESPONSESTRU);
+    pstruHeaderOut->len = htons(len);
+    pstruHeaderOut->type = PT_RESPONSE;
+
+    return pstruResp;
+}
+
+PTADJUSTTIMESTRU *_BtsProcessAdjusttime(PTADJUSTTIMESTRU *input)
+{
+    PTADJUSTTIMESTRU *output;
+    PTHEADERSTRU *pstruHeader;
+    int len;
+    struct timeval struTimeNow;
+
+    if (!input)
+        return NULL;
+
+    pstruHeader = (PTHEADERSTRU*)input;
+    len = ntohs(pstruHeader->len) - 1; /* ignore the 'devStatus' member */
+
+    output = malloc(sizeof (PTADJUSTTIMESTRU));
+    if (!output)
+    {
+        PrintErrorLog(DBG_HERE,"Failed to allocate memory\n");
+        return NULL;
+    }
+
+    memcpy(output, input, len);
+    gettimeofday(&struTimeNow, NULL);
+    pstruHeader = (PTHEADERSTRU*)output;
+    pstruHeader->len = htons(len);
+    output->rstime = htonl((uint32_t)struTimeNow.tv_sec);
+    output->rutime = htonl((uint32_t)struTimeNow.tv_usec);
+    output->devStatus = 0;
+
+    return output;
+}
+
+PTCALLSTRU *_BtsCreateCall(char *imsi, int cmd, int operator)
+{
+    PTCALLSTRU *pstruCall;
+    PTHEADERSTRU *pstruHeader;
+    int idx;
+
+    pstruCall = malloc(sizeof (PTCALLSTRU));
+    if (!pstruCall)
+    {
+        PrintErrorLog(DBG_HERE,"Failed to allocate memory\n");
+        return NULL;
+    }
+
+    pstruCall->cmd = cmd;
+    snprintf(pstruCall->content, PROTOCOL_MAX_LEN,
+            "%d:cdsp %d %s",
+            operator,
+            operator==OPER_CTC?22:15,
+            imsi);
+    pstruHeader = &pstruCall->header;
+    pstruHeader->type = PT_CALL;
+    pthread_mutex_lock(&mutex);
+    idx = gSessionIdIndex++;
+    pthread_mutex_unlock(&mutex);
+    pstruHeader->session_id = idx + MIN_CALL_SESSION_ID;
+    pstruHeader->len = sizeof (PTCALLSTRU) - sizeof (pstruCall->content) + strlen(pstruCall->content);
+
+    return pstruCall;
+}
+
+/**
+ * if mobile phone login, add it into gstruImsis
+ */
+void _BtsProcessBusiness(PTBUSINESSSTRU *input)
+{
+    int exist = 0;
+    IMSISTRU *pstruImsi, *pstruTmp;
+
+    if (!input)
+        return;
+
+    __printBusiness(input);
+
+    pstruImsi = calloc(1, sizeof (IMSISTRU));
+    if (!pstruImsi)
+    {
+        PrintErrorLog(DBG_HERE,"Failed to allocate memory\n");
+        return;
+    }
+
+    pstruImsi->oper = input->oper;
+    pstruImsi->subProto = input->subProto;
+    if (input->subProto == SUB_PROTO_SMS)
+    {
+        sscanf(input->content, "%[^_]_%[^_]_%[^_]_%[^_]_%[^_]",
+               pstruImsi->time,
+               pstruImsi->imsi,
+               pstruImsi->phoneNum,
+               pstruImsi->smsFmt,
+               pstruImsi->smsContent);
+    }
+    else if (input->subProto == SUB_PROTO_CALL)
+    {
+        sscanf(input->content, "%[^_]_%[^_]_%[^_]",
+               pstruImsi->time,
+               pstruImsi->imsi,
+               pstruImsi->phoneNum);
+    }
+    else if (input->subProto == SUB_PROTO_LOGIN)
+    {
+        sscanf(input->content, "%[^_]_%[^_]_%[^_]",
+               pstruImsi->time,
+               pstruImsi->imsi,
+               pstruImsi->imei);
+    }
+
+    __printImsi(pstruImsi);
+
+    pthread_mutex_lock(&mutex);
+    list_for_each_entry(pstruTmp, &gstruImsis, list)
+    {
+        if (!strcmp(pstruTmp->imsi, pstruImsi->imsi))
+        {
+            exist = 1;
+            break;
+        }
+    }
+    if (!exist) /* if not exist, add to the tail of list */
+        list_add_tail(&pstruImsi->list, &gstruImsis);
+    else
+        free(pstruImsi);
+    pthread_mutex_unlock(&mutex);
+}
+
+static int _isGprsServAlarm(char *input)
+{
+    if (input && input[0] == '<')
+        return 1;
+
+    return 0;
+}
+
+/**
+ * @param[in] input: protocol package received from base station
+ * @param[out] output: protocol package send to base station (if necessary)
+ */
+void BtsProcessBuffer(void *input, void **output)
+{
+    if (!input)
+        return;
+
+    if (_isGprsServAlarm(input))
+    {
+        _BtsProcessGprsServAlarm((char*)input);
+        return;
+    }
+    __printInputBare(input);
+
+    PTHEADERSTRU *pstruHeader = input;
+    if (pstruHeader->type == PT_LOGIN)
+    {
+        __printLogin((PTLOGINSTRU*)input);
+        *output = (void*)_BtsProcessLogin((PTLOGINSTRU*)input);
+        __printLoginResp((PTRESPONSESTRU*)*output);
+    }
+    else if (pstruHeader->type == PT_ADJUSTTIME)
+    {
+        __printAdjusttime((PTADJUSTTIMESTRU*)input);
+        *output = (void*)_BtsProcessAdjusttime((PTADJUSTTIMESTRU*)input);
+        __printAdjusttime((PTADJUSTTIMESTRU*)*output);
+    }
+    else if (pstruHeader->type == PT_BUSINESS)
+    {
+        _BtsProcessBusiness((PTBUSINESSSTRU*)input);
+    }
+    else if (pstruHeader->type == PT_RESPONSE)
+    {
+        /* do nothing */
+    }
+    else if (pstruHeader->type == PT_CALL)
+    {
+        /* do nothing */
+    }
+    else
+    {
+        /* do nothing */
+    }
+}
+
+#define DEFAULT_LISTEN_PORT 1234
+#define DEFAULT_SEND_PORT 4312
+#define DEFAULT_SEND_INTV 5 /* unit: second */
+#define DEFAULT_SEND_TIMES 10
+#define DEFAULT_RECV_INTV 3 /* unit: second */
+static int _get_cfg_int(char *key)
+{
+    STR szTemp[MAX_STR_LEN];
+
+    if (!key)
+        return -1;
+
+    if (GetCfgItem("btsrecv.cfg","BTSRECV", key, szTemp) == NORMAL)
+        return atoi(szTemp);
+
+    /* Failed to get cfg */
+    if (!strcmp(key, "ListenPort"))
+        return DEFAULT_LISTEN_PORT;
+    if (!strcmp(key, "SendPort"))
+        return DEFAULT_SEND_PORT;
+    if (!strcmp(key, "SendInterval"))
+        return DEFAULT_SEND_INTV;
+    if (!strcmp(key, "SendTimes"))
+        return DEFAULT_SEND_TIMES;
+    if (!strcmp(key, "RecvInterval"))
+        return DEFAULT_RECV_INTV;
+
+    return -1;
+}
+
+static void _get_cfg_str(char *key, char *value)
+{
+    STR szTemp[MAX_STR_LEN] = {0};
+
+    if (!key || !value)
+        return;
+
+    GetCfgItem("btsrecv.cfg", "BTSRECV", key, szTemp);
+    strcpy(value, szTemp);
+}
+
+void *BtsDetective(void *arg)
+{
+    IMSISTRU *pstruImsi, *pstruImsi_safe;
+    PTCALLSTRU *pstruCall;
+    struct list_head struHeaderTmp, struAlarms;
+    ALARMSTRU *pstruAlarmSrc, *pstruAlarmDest, *pstruAlarm_safe;
+    char buf[PROTOCOL_MAX_LEN];
+    char szSendUrl[MAX_STR_LEN]; /* send result to this address */
+    int nAreaId;
+    int nSendIntv, nSendTimes; /* the interval and times of sending paging */
+    int nRecvIntv; /* the interval of recving alarm */
+    int sockfd;
+    int exist;
+
+    INIT_LIST_HEAD(&struAlarms);
+    INIT_LIST_HEAD(&struHeaderTmp);
+
+    while (1)
+    {
+        /*
+         * if cfg changed, this thread does not need to restart
+         */
+        memset(szSendUrl, 1, sizeof (szSendUrl));
+        _get_cfg_str("SendUrl", szSendUrl);
+        nAreaId = _get_cfg_int("AreaId");
+        nSendTimes = _get_cfg_int("SendTimes");
+        nSendIntv = _get_cfg_int("SendIntv");
+        nRecvIntv = _get_cfg_int("RecvIntv");
+        if (nRecvIntv >= nSendIntv)
+            nRecvIntv = nSendIntv / 2 + 1; /* at last 1 second */
+
+        pstruImsi = NULL;
+        pthread_mutex_lock(&mutex);
+        if (!list_empty(&gstruImsis))
+        {
+            list_for_each_entry_safe(pstruImsi, pstruImsi_safe,
+                    &gstruImsis, list)
+            {
+                list_del(&pstruImsi->list);
+                break;
+            }
+        }
+        pthread_mutex_unlock(&mutex);
+        if (pstruImsi == NULL)
+        {
+            sleep(nSendIntv);
+            continue;
+        }
+
+        while (nSendTimes-- > 0)
+        {
+            /* let main thread cache alarms which are received from gprsserv */
+            pthread_mutex_lock(&mutex);
+            gnCacheAlarm = 1;
+            sockfd = gnBtsSockFd;
+            pthread_mutex_unlock(&mutex);
+
+            /* let BTS paging the mobile phone */
+            pstruCall = _BtsCreateCall(pstruImsi->imsi,
+                    COMMAND_COMMAND, pstruImsi->oper);
+            _do_write(sockfd, (void*)pstruCall, pstruCall->header.len);
+            _do_read(sockfd, buf, PROTOCOL_MAX_LEN);
+
+            /* let main thread stop caching alarms */
+            sleep(nRecvIntv); /* give enough time to recv the right position */
+            pthread_mutex_lock(&mutex);
+            gnCacheAlarm = 0;
+            pthread_mutex_unlock(&mutex);
+            sleep(nSendIntv-nRecvIntv);
+
+            /* start detecting */
+            /* remove all nodes from gstruAlarms soon */
+            pthread_mutex_lock(&mutex);
+            list_splice_init(&gstruAlarms, &struHeaderTmp);
+            pthread_mutex_unlock(&mutex);
+
+            list_for_each_entry(pstruAlarmDest, &struAlarms, list)
+                pstruAlarmDest->exist = 0; /* reset all nodes' 'exist' record */
+
+            list_for_each_entry_safe(pstruAlarmSrc, pstruAlarm_safe, &struHeaderTmp, list)
+            {
+                exist = 0;
+                list_del(&pstruAlarmSrc->list);
+
+                list_for_each_entry(pstruAlarmDest, &struAlarms, list)
+                {
+                    if (!strcmp(pstruAlarmSrc->neName, pstruAlarmDest->neName))
+                    {
+                        pstruAlarmDest->exist = 1; /* porition is exist in this period */
+                        exist = 1;
+                        break;
+                    }
+                }
+                if (!exist)
+                { /* if the node does not exist in list 'struAlarms', add it */
+                    pstruAlarmSrc->exist = 1;
+                    pstruAlarmSrc->num = 0;
+                    list_add(&pstruAlarmSrc->list, &struAlarms);
+                }
+                else
+                    free(pstruAlarmSrc);
+            } /* processed all alarms received from gprsserv periodly */
+
+            /* if position appears in this period, no matter how many times, plus 1 */
+            list_for_each_entry(pstruAlarmDest, &struAlarms, list)
+                pstruAlarmDest->num += pstruAlarmDest->exist;
+        } /* while (nSendTimes-- > 0), all periods are over */
+
+        int MaxNum = 0;
+        char neName[128];
+        int oper;
+        char imsi[32];
+        oper = pstruImsi->oper;
+        strcpy(imsi, pstruImsi->imsi);
+
+        list_for_each_entry_safe(pstruAlarmDest, pstruAlarm_safe, &struAlarms, list)
+        {
+            if (MaxNum < pstruAlarmDest->num)
+            {
+                MaxNum = pstruAlarmDest->num;
+                /* FIXME: i do not know which one should be get */
+                strcpy(neName, pstruAlarmDest->channel);
+                strcpy(neName, pstruAlarmDest->neName);
+            }
+            list_del(&pstruAlarmDest->list);
+            free(pstruAlarmDest);
+        }
+
+        if (pstruImsi->subProto == SUB_PROTO_SMS)
+        {
+            snprintf(buf, sizeof (buf),
+                    "msg={areaId:%d,type:\"WARN_SMS\",imsi:\"%s\"," "targNum:\"%s\","
+                    "recordDate:\"%s\",operator:%d,msgContent:\"%s\",posinfo:\"%s\"}",
+                    nAreaId, pstruImsi->imsi, pstruImsi->phoneNum,
+                    pstruImsi->time, pstruImsi->oper, pstruImsi->smsContent, neName);
+        }
+        else if (pstruImsi->subProto == SUB_PROTO_CALL)
+        {
+            snprintf(buf, sizeof (buf),
+                    "msg={areaId:%d,type:\"WARN_CALL\",imsi:\"%s\",targNum:\"%s\","
+                    "recordDate:\"%s\",operator:%d,posinfo:\"%s\"}",
+                    nAreaId, pstruImsi->imsi, pstruImsi->phoneNum,
+                    pstruImsi->time, pstruImsi->oper, neName);
+        }
+        else if (pstruImsi->subProto == SUB_PROTO_LOGIN)
+        {
+            snprintf(buf, sizeof (buf),
+                    "msg={areaId:%d,type:\"WARN_LOGIN\",imsi:\"%s\",imei:\"%s\","
+                    "recordDate:\"%s\",operator:%d,posinfo:\"%s\"}",
+                    nAreaId, pstruImsi->imsi, pstruImsi->imei,
+                    pstruImsi->time, pstruImsi->oper, neName);
+        }
+        else
+        {
+            snprintf(buf, sizeof (buf), "msg={type:\"WARN_UNKOWN\"}");
+        }
+
+        if (*szSendUrl)
+        {
+            char *recv = NULL;
+            curl_easy_send_recv(szSendUrl, buf, &recv);
+            free(recv);
+        }
+        free(pstruImsi);
+    }
+}
+
+void *process_thread(void *arg)
+{
+    int fd, pack_len, len, type;
+    char buf[PROTOCOL_MAX_LEN];
+    char *out;
+    PTHEADERSTRU *pstruHeader;
+
+    if (!arg)
+        return NULL;
+
+    fd = *(int*)arg;
+    free(arg);
+
+    while (1)
+    {
+        /* NOTE: if not clear it, read() always success,
+         * even if there's no data received */
+        memset(buf, 0, sizeof (buf));
+        read(fd, buf, 1);
+        if (*buf == '<') /* if recv from gprsserv */
+        {
+            type = RECV_TYPE_GPRSSERVALARM;
+            read(fd, buf+1, sizeof (buf));
+        }
+        else /* recv from BTS */
+        {
+            type = RECV_TYPE_BTSREQUEST;
+
+            /* only keep one long time connection's socket */
+            pthread_mutex_lock(&mutex);
+            if (gnBtsSockFd && gnBtsSockFd != fd)
+            {
+                close(gnBtsSockFd);
+                if (gBtsThreadId)
+                    pthread_cancel(gBtsThreadId);
+            }
+            gnBtsSockFd = fd;
+            gBtsThreadId = pthread_self();
+            pthread_mutex_unlock(&mutex);
+
+            len = _do_read(fd, buf+1, sizeof (PTHEADERSTRU));
+            if (len < 0)
+            {
+                PrintErrorLog(DBG_HERE, "Failed to recv msg\n");
+                close(fd);
+                return NULL;
+            }
+            pstruHeader = (PTHEADERSTRU*)buf;
+            pack_len = ntohs(pstruHeader->len);
+
+            len = _do_read(fd, (void*)buf+1+sizeof (PTHEADERSTRU),
+                    pack_len-sizeof (PTHEADERSTRU));
+            if (len < 0)
+            {
+                PrintErrorLog(DBG_HERE, "Failed to recv msg\n");
+                close(fd);
+                return NULL;
+            }
+        } /* read all data */
+
+        BtsProcessBuffer((void*)buf, (void**)&out);
+
+        if (type == RECV_TYPE_BTSREQUEST)
+        {
+            if (out)
+            {
+                __printOutputBare((void*)out);
+                pstruHeader = (PTHEADERSTRU*)out;
+                //_do_write(fd, out, pstruHeader->len);
+                free(out);
+            }
+        }
+        else if (type == RECV_TYPE_GPRSSERVALARM)
+        {
+            close(fd);
+            if (out)
+                free(out); /* just free */
+            break; /* exit the thread, game over */
+        }
+    }
+    return NULL;
+}
+static VOID Usage(PSTR pszProg)
+{
+    fprintf(stderr, "网管系统(BTS采集服务器) v%s\n", VERSION);
+    fprintf(stderr, "%s start 启动程序\n"
+            "%s stop 停止程序\n"
+            "%s -h 显示本信息\n", pszProg, pszProg, pszProg);
+}
+
+RESULT main(INT argc, PSTR *argv)
+{
+    INT nListenPort;
+
+    if(argc != 2)
+    {	
+        Usage(argv[0]);
+        return NORMAL;
+    }
+
+    if(strcmp(argv[1], "stop") == 0)
+    {
+        StopPrg(argv[0]);
+        return NORMAL;
+    }
+    else if(strcmp(argv[1], "start"))
+    {
+        Usage(argv[0]);
+        return NORMAL;
+    }
+    fprintf(stderr, "\t欢迎使用网管系统(BTS采集服务器)\n");
+    fflush(stderr);
+
+    if(TestPrgStat(argv[0]) == NORMAL)
+    {
+        fprintf(stderr, "%s已经启动或者正在服务.请关闭或者是稍后再启动\n", \
+                argv[0]);
+        return EXCEPTION;
+    }
+
+#if 0
+    if(DaemonStart() == EXCEPTION)
+    {
+        PrintErrorLog(DBG_HERE,"主函数调用 DaemonStart 进入守护状态错误!\n");
+        return EXCEPTION;
+    }
+#endif
+
+    if(CreateIdFile(argv[0]) == EXCEPTION)
+    {
+        PrintErrorLog(DBG_HERE,"主函数调用 CreateIdFile 错误!\n");
+        return EXCEPTION;
+    }
+
+    nListenPort = _get_cfg_int("ListenPort");
+
+    fprintf(stderr,"完成!\n主程序开始启动\n");
+    fflush(stderr);
+
+    signal(SIGPIPE, SIG_IGN);
+
+    /* init something */
+    pthread_mutex_lock(&mutex);
+    gSessionIdIndex = 0;
+    gnBtsSockFd = 0;
+    gBtsThreadId = 0;
+    INIT_LIST_HEAD(&gstruImsis);
+    INIT_LIST_HEAD(&gstruAlarms);
+    pthread_mutex_unlock(&mutex);
+
+    pthread_t thid;
+    pthread_create(&thid, NULL, BtsDetective, NULL);
+
+    struct sockaddr_in struMyAddr, struClientAddr;
+    int nSockFd, nClientFd = 0, opt = 1;
+    memset(&struMyAddr, 0, sizeof (struct sockaddr_in));
+    struMyAddr.sin_family = AF_INET;
+    struMyAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    struMyAddr.sin_port = htons(nListenPort);
+
+    nSockFd = socket(AF_INET, SOCK_STREAM, 0);
+    if (!nSockFd)
+    {
+        PrintErrorLog(DBG_HERE,"Failed to create socket\n");
+        return EXCEPTION;
+    }
+    if (setsockopt(nSockFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof (opt))) {
+        PrintErrorLog(DBG_HERE,"Failed to set SO_REUSEADDR (%s)\n", strerror(errno));
+        close(nSockFd);
+        return EXCEPTION;
+    }
+
+    if (bind(nSockFd, (struct sockaddr*)&struMyAddr, sizeof (struct sockaddr)) < 0)
+    {
+        PrintErrorLog(DBG_HERE,"Failed to bind socket\n");
+        close(nSockFd);
+        return EXCEPTION;
+    }
+    listen(nSockFd, 5);
+
+    while (1)
+    {
+        pthread_t thid;
+        int *pnClientFd, len = 1;
+        memset(&struClientAddr, 0, sizeof(struct sockaddr_in));
+        nClientFd = accept(nSockFd, (struct sockaddr*)&struClientAddr, (socklen_t*)&len);
+        if (nClientFd < 0)
+        {
+            PrintErrorLog(DBG_HERE, "Failed to accept client: %s\n",
+                    strerror(errno));
+            continue;
+        }
+
+        pnClientFd = malloc(sizeof (int));
+        if (!pnClientFd)
+        {
+            PrintErrorLog(DBG_HERE,"Failed to allocate memory\n");
+            close(nSockFd);
+            return EXCEPTION;
+        }
+        *pnClientFd = nClientFd;
+
+        pthread_create(&thid, NULL, process_thread, (void*)pnClientFd);
+    }
+    return NORMAL;
+}

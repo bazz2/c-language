@@ -1,6 +1,8 @@
 #include <error.h>
 #include <stdio.h>
 #include <pthread.h>
+#include <stdint.h>
+#include <sys/epoll.h>
 
 #define handle_error(msg) \
 	do {perror(msg); exit(1);} while (0)
