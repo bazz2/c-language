@@ -20,18 +20,22 @@ if [ 0 == 0 ]; then
 cat $logfile | grep -B 1 "发送.*报文" |grep -v '^--$'|sed 'N;s/\n//' |awk -F '[' '{print $3, $11}' |sed 's/]//g;s/~//g' >.tmp.GRRUSENDtoDAS$nowtime.csv
 sed -i 's/5E5D/5E/g;s/5E7D/7E/g' .tmp.GRRUSENDtoDAS$nowtie.csv
 cat .tmp.GRRUSENDtoDAS$nowtime.csv |awk 'BEGIN{OFS=",";}{print $1,substr($2,5,8),substr($2,13,2),substr($2,15,4),substr($2,23,2),"GRRUSENDtoDAS"}' >GRRUSENDtoDAS$nowtime.csv
+rm -f .tmp.GRRUSENDtoDAS$nowtime.csv
 
 cat $logfile | grep -B 1 "接收应答报文" |grep -v '^--$' |sed 'N;s/\n//'|awk -F '[' '{print $3, $9}' |sed 's/]//g;s/~//g' >.tmp.DAStoGRRUSEND$nowtime.csv
 sed -i 's/5E5D/5E/g;s/5E7D/7E/g' .tmp.DAStoGRRUSEND$nowtie.csv 
 cat .tmp.DAStoGRRUSEND$nowtie.csv |awk 'BEGIN{OFS=",";}{print $1,substr($2,5,8),substr($2,13,2),substr($2,15,4),substr($2,23,2),"DAStoGRRUSEND"}' >DAStoGRRUSEND$nowtime.csv
+rm -f .tmp.DAStoGRRUSEND$nowtie.csv
 
 cat $logfile | grep -B 1 "发送数据到 GPRSSERV \[" |grep -v '^--$' |sed 'N;s/\n//' |awk -F '[' '{print $3, $8}' |sed 's/]//g;s/~//g' >.tmp.GRRUSENDtoGPRSSERV$nowtime.csv
 sed -i 's/5E5D/5E/g;s/5E7D/7E/g' .tmp.GRRUSENDtoGPRSSERV$nowtie.csv 
 cat .tmp.GRRUSENDtoGPRSSERV$nowtie.csv |awk 'BEGIN{OFS=",";}{print $1,substr($2,5,8),substr($2,13,2),substr($2,15,4),substr($2,23,2),"GRRUSENDtoGPRSSERV"}' >GRRUSENDtoGPRSSERV$nowtime.csv
+rm -f .tmp.GRRUSENDtoGPRSSERV$nowtie.csv
 
 cat $logfile2 | grep -B 1 "接收请求报文" |grep -v '^--$' |sed 'N;s/\n//' |awk -F '[' '{print $3, $7}' |sed 's/]//g;s/~//g' >.tmp.GPRSSERVrecvfromGRRUSEND$nowtie.csv
-sed -i 's/5E5D/5E/g;s/5E7D/7E/g' GPRSSERVrecvfromGRRUSEND$nowtie.csv
+sed -i 's/5E5D/5E/g;s/5E7D/7E/g' .tmp.GPRSSERVrecvfromGRRUSEND$nowtie.csv
 cat .tmp.GPRSSERVrecvfromGRRUSEND$nowtie.csv|awk 'BEGIN{OFS=",";}{print $1,substr($2,5,8),substr($2,13,2),substr($2,15,4),substr($2,23,2),"GRRUSENDrecvfromGPRSSERV"}' >GPRSSERVrecvfromGRRUSEND$nowtime.csv
+rm -f .tmp.GPRSSERVrecvfromGRRUSEND$nowtie.csv
 
 
 cat GRRUSENDtoDAS$nowtime.csv DAStoGRRUSEND$nowtime.csv GRRUSENDtoGPRSSERV$nowtime.csv |sort >allqueue
