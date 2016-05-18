@@ -6,24 +6,25 @@
 #
 ############################################
 
+limit=15
 if [ -z $1 ] || [ $1 != "-v" ]; then
 	mysqlcmd="
 	select tkl_tasklogid as logid, 
 	TKL_BEGINTIME,TKL_ENDTIME,TKL_TXPACKCOUNT as send,TKL_RXPACKCOUNT as recv, 
-	TKL_ELESUCCESSCOUNT as InTime from man_tasklog a, man_task b where a.tkl_taskid=b.tsk_taskid order by tkl_tasklogid desc limit 10;
+	TKL_ELESUCCESSCOUNT as InTime from man_tasklog a, man_task b where a.tkl_taskid=b.tsk_taskid order by tkl_tasklogid desc limit $limit;
 	"
 else
 	mysqlcmd="
 	select tkl_tasklogid as logid,tkl_taskid as id,tsk_taskname as name, 
 	TKL_BEGINTIME,TKL_ENDTIME,TKL_TXPACKCOUNT as send,TKL_RXPACKCOUNT as recv,
-	TKL_ELESUCCESSCOUNT as InTime from man_tasklog a, man_task b where a.tkl_taskid=b.tsk_taskid order by tkl_tasklogid desc limit 10;
+	TKL_ELESUCCESSCOUNT as InTime from man_tasklog a, man_task b where a.tkl_taskid=b.tsk_taskid order by tkl_tasklogid desc limit $limit;
 	"
 fi
 
-#host="-h 10.152.69.204"
-host=""
+host="-h 10.152.69.204"
+#host=""
 clear
-mysql -udas_uq -pdas_uq das_uq $host -e "$mysqlcmd"
+mysql -udas_uq -pdas_uq das_uq $host -e "$mysqlcmd" 2>/dev/null
 
 echo -n "Input task log id: "
 while true; do
@@ -37,7 +38,7 @@ done
 
 echo "Choosed task log id: $id"
 
-orig=`mysql -udas_uq -pdas_uq das_uq -h $host -e "
+orig=`mysql -udas_uq -pdas_uq das_uq $host -e "
 select TKL_BEGINTIME,TKL_ENDTIME from man_tasklog where tkl_tasklogid=$id limit 1;
 " 2>/dev/null`
 starttime=`echo $orig |awk '{if($3)if($5!="NULL") print $3,$4}'`
@@ -50,8 +51,9 @@ if [ -z "$starttime" ] || [ -z "$endtime" ]; then
 fi
 
 
-logfile="grrusend-*"
-logfile2="gprsserv-*"
+logdate=`echo $starttime |awk '{print $1}' |awk -F'-' '{print $1$2$3}'`
+logfile="$HOME/log/debug/grrusend-$logdate.dbg*"
+logfile2="$HOME/log/debug/gprsserv-$logdate.dbg*"
 #nowtime="-"`date +%y%m%d%H`
 nowtime=""
 
@@ -60,26 +62,26 @@ if [ 0 == 0 ]; then
 # statistics into csv
 ##
 cat $logfile | grep -B 1 "发送.*报文" |grep -v '^--$'|sed 'N;s/\n//' |awk -F '[' '{print $2,$3,$11}' |sed 's/]//g;s/~//g' |awk -vA="$starttime" -vB="$endtime" '{if($1" "$2>=A)if($1" "$2<=B) print}' >.tmp.GRRUSENDtoDAS$nowtime.csv
-sed -i 's/5E5D/5E/g;s/5E7D/7E/g' .tmp.GRRUSENDtoDAS$nowtie.csv
+#sed -i 's/5E5D/5E/g;s/5E7D/7E/g' .tmp.GRRUSENDtoDAS$nowtie.csv
 cat .tmp.GRRUSENDtoDAS$nowtime.csv |awk 'BEGIN{OFS=",";}{print $2,substr($3,5,10)substr($3,15,4),substr($3,23,2),"GRRUSENDtoDAS"}' >GRRUSENDtoDAS$nowtime.csv
 echo -n "grrusend->das: "
 wc -l GRRUSENDtoDAS$nowtime.csv
 
 cat $logfile | grep -B 1 "接收应答报文" |grep -v '^--$' |sed 'N;s/\n//'|awk -F '[' '{print $2,$3,$9}' |sed 's/]//g;s/~//g' | awk -vA="$starttime" -vB="$endtime" '{if($1" "$2>=A)if($1" "$2<=B) print}' >.tmp.DAStoGRRUSEND$nowtime.csv
-sed -i 's/5E5D/5E/g;s/5E7D/7E/g' .tmp.DAStoGRRUSEND$nowtie.csv 
+#sed -i 's/5E5D/5E/g;s/5E7D/7E/g' .tmp.DAStoGRRUSEND$nowtie.csv 
 cat .tmp.DAStoGRRUSEND$nowtie.csv |awk 'BEGIN{OFS=",";}{print $2,substr($3,5,10)substr($3,15,4),substr($3,23,2),"DAStoGRRUSEND"}' >DAStoGRRUSEND$nowtime.csv
 echo -n "das->grrusend: "
 wc -l DAStoGRRUSEND$nowtime.csv
 
 cat $logfile | grep -B 1 "Send msg to GPRSSERV \[" |grep -v '^--$' |sed 'N;s/\n//' |awk -F '[' '{print $2,$3,$8}' |sed 's/]//g;s/~//g' | awk -vA="$starttime" -vB="$endtime" '{if($1" "$2>=A)if($1" "$2<=B) print}' >.tmp.GRRUSENDtoGPRSSERV$nowtime.csv
-sed -i 's/5E5D/5E/g;s/5E7D/7E/g' .tmp.GRRUSENDtoGPRSSERV$nowtie.csv 
+#sed -i 's/5E5D/5E/g;s/5E7D/7E/g' .tmp.GRRUSENDtoGPRSSERV$nowtie.csv 
 cat .tmp.GRRUSENDtoGPRSSERV$nowtie.csv |awk 'BEGIN{OFS=",";}{print $2,substr($3,5,10)substr($3,15,4),substr($3,23,2),"GRRUSENDtoGPRSSERV"}' >GRRUSENDtoGPRSSERV$nowtime.csv
 echo -n "grrusend->gprsserv: "
 wc -l GRRUSENDtoGPRSSERV$nowtime.csv
 
 # grep -v '410107....~]' is ignore heartbeat
 cat $logfile2 | grep -B 1 "Receive msg" |grep -v '^--$' |sed 'N;s/\n//' |awk -F '[' '{print $2,$3,$7}' |grep -v '410107....~]' |sed 's/]//g;s/~//g' | awk -vA="$starttime" -vB="$endtime" '{if($1" "$2>=A)if($1" "$2<=B) print}' >.tmp.GPRSSERVrecvfromGRRUSEND$nowtie.csv
-sed -i 's/5E5D/5E/g;s/5E7D/7E/g' .tmp.GPRSSERVrecvfromGRRUSEND$nowtie.csv
+#sed -i 's/5E5D/5E/g;s/5E7D/7E/g' .tmp.GPRSSERVrecvfromGRRUSEND$nowtie.csv
 cat .tmp.GPRSSERVrecvfromGRRUSEND$nowtie.csv|awk 'BEGIN{OFS=",";}{print $2,substr($3,5,10)substr($3,15,4),substr($3,23,2),"GRRUSENDrecvfromGPRSSERV"}' >GPRSSERVrecvfromGRRUSEND$nowtime.csv
 echo -n "gprsserv<-grrusend: "
 wc -l GPRSSERVrecvfromGRRUSEND$nowtime.csv
@@ -112,13 +114,14 @@ while read line; do
 	cat GRRUSENDtoDAS$nowtime.csv |grep -m 1 ",$line," |awk -vA=$times_grrusend2das -vB=$times_das2grrusend -vC=$times_grrusend2gprsserv -vD=$times_gprsservRecvfromgrrusend 'BEGIN{FS=",";OFS=",";}{print $2,$3,A,B,C,D;}' >>compare.csv
 done <.uniq
 echo -e "\n**********"
+tail -n +2 compare.csv |sort -t ',' -k 3 >result.csv
+
 fi
-tail -n +2 compare.csv |sort -t ',' -k 3 >compare_sort.csv
 
 ##
 # get package number of all steps, pointer out which package is lost
 ##
-if [ 0 == 0 ]; then
+if [ 1 == 0 ]; then
 echo ""
 echo -n 'Grrusend to das package num: '
 cat GRRUSENDtoDAS$nowtime.csv | awk -F ',' '{print $2}' |sort|uniq -c >.diff.GRRUSENDtoDAS$nowtime.csv
