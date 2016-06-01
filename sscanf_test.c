@@ -77,7 +77,7 @@ void main()
 	printf("ret:%d; tmp:%d\n", ret, tmp);
 }
 #endif
-#if 1
+#if 0
 void main()
 {
 	const char *ip_port = "192.168.3.98:9997";
@@ -86,5 +86,19 @@ void main()
 
 	ret = sscanf(ip_port, "%30[^:]:%d", ip, &port);
 	printf("[%d] %s : %d\n", ret, ip, port);
+}
+#endif
+#if 1
+void main()
+{
+	const char *mode = "1d2:w59";
+	int ret = -1;
+    int num = -1;
+    char time[128] = {0};
+    char time2[128] = {0};
+    int hour, min;
+
+	ret = sscanf(mode, "%d:%d", &hour, &min);
+	printf("ret:%d; %d %d\n", ret, hour, min);
 }
 #endif

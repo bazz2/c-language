@@ -20,7 +20,7 @@ char *string="\x03\x00\x00\x61<omc>\n\t<packcd>6002</packcd>\n\t<taskid>277</tas
 int main(int argc, char **argv)   
 {       
        int servfd = 0, clifd = 0, length = 0;   
-       struct sockaddr_in servaddr,cliaddr;   
+       struct sockaddr_in servaddr, cliaddr;   
        socklen_t socklen = sizeof(servaddr);   
        char buf[BUFFER_SIZE] = {0};   
          

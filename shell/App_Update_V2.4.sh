@@ -1,7 +1,7 @@
 #!/bin/sh
 
-backup_dir="/home/work/V2.3.1/backup_V2.3_app"
-update_dir="/home/work/V2.3.1/update_V2.3.1_app"
+backup_dir="/home/work/backup/backup_V2.3_app"
+update_dir="/home/work/update/update_V2.4_app"
 
 function file_backup()
 {
@@ -17,9 +17,9 @@ function file_backup()
         return
     fi
     echo "Creating tarball..."
-    rm -rf App_das_uq.*
-    tar czvf $backup_dir/App_das_uq.tar.gz bin/ lib/ etc/ tools/
-    ls -l $backup_dir/App_das_uq.tar.gz
+    rm -rf App*
+    tar czvf $backup_dir/App_V2.3.tar.gz bin/ lib/ etc/ tools/
+    ls -l $backup_dir/App_V2.3.tar.gz
     echo "[Files backup finished, if there's no problem, do 2.[Check files]!]"
 }
 
@@ -30,14 +30,14 @@ function update_file_check()
         return
     fi
     chown -R das_uq:das_uq $update_dir
-    chmod -R 755 $update_dir
+    chmod -R 775 $update_dir
     echo "[---update files check,including quantity and size---]"
     ls -l $update_dir
     echo " "
     quantity=`find $update_dir -type f |wc -l`
     size=`du -cb $update_dir/* |grep total |awk '{print$1}'`
     echo "[There are $quantity files to be updated ($size Byte)]"
-    echo "[Files checkup is finished, if there's no problem, do 3.[owner change]]"
+    echo "[Files checkup is finished, if there's no problem, do 3.[Update]]"
 }
 
 function file_update()
@@ -46,20 +46,20 @@ function file_update()
 	if [ $? != 0 ];then
         return
 	fi
-	echo "[Omcstop]"
-	su - das_uq -c omcstop
-	echo "[Omcstop check: press 'y' or 'n' to continue]"
-	read da;
-	if [ -z $da ];then
-		echo "[Please input 'y' or 'n']";
-	elif [ $da == 'n' ];then
-		echo "[ERROR: Program teminated, please omcstop by hand]"
-		exit 0;
-	elif [ $da == 'y' ];then
-		echo "[Omcstop successfully!]";
-	else
-		echo "[Please input 'y' or 'n']";
-	fi
+	#echo "[Omcstop]"
+	#su - das_uq -c omcstop
+	#echo "[Omcstop check: press 'y' or 'n' to continue]"
+	#read da;
+	#if [ -z $da ];then
+	#	echo "[Please input 'y' or 'n']";
+	#elif [ $da == 'n' ];then
+	#	echo "[ERROR: Program teminated, please omcstop by hand]"
+	#	exit 0;
+	#elif [ $da == 'y' ];then
+	#	echo "[Omcstop successfully!]";
+	#else
+	#	echo "[Please input 'y' or 'n']";
+	#fi
 
 	echo "[Updating...]"
 	rm -rf /home/das_uq/bin/applserv
@@ -92,11 +92,11 @@ function file_update()
 		let m++
 	fi
 	
-	rm -rf /home/das_uq/bin/systemalarm
-	cp -rf $update_dir/systemalarm /home/das_uq/bin
-	if [ $? == 0  ];then
-		let m++
-	fi
+	#rm -rf /home/das_uq/bin/systemalarm
+	#cp -rf $update_dir/systemalarm /home/das_uq/bin
+	#if [ $? == 0  ];then
+	#	let m++
+	#fi
 	
 	rm -rf /home/das_uq/bin/timeserv
 	cp -rf $update_dir/timeserv /home/das_uq/bin
@@ -146,10 +146,10 @@ function file_update()
 		let n++
 	fi
 	
-	ls -l /home/das_uq/bin/systemalarm
-	if [ $? == 0  ];then
-		let n++
-	fi
+	#ls -l /home/das_uq/bin/systemalarm
+	#if [ $? == 0  ];then
+	#	let n++
+	#fi
 	
 	ls -l /home/das_uq/bin/timeserv
 	if [ $? == 0  ];then
@@ -203,7 +203,7 @@ function file_update()
 }
 
 while true; do
-	echo "		[UQ NMS V2.3.1 update_app script]"
+	echo "		[UQ NMS V2.4 update_app script]"
 	echo " "
 	echo "		1.[Backup]"
 	echo "		2.[Check files]"
@@ -217,18 +217,18 @@ while true; do
         echo "[***File backup*** confirm,please input 'y' or 'n' to continue]"
         while true
         do
-            read  ad;
-            if [ -z $ad ];then
+            read  dd;
+            if [ -z $dd ];then
                 echo "[Please input 'y' or 'n'] ";
-            elif [ $ad == 'n' ];then
+            elif [ $dd == 'n' ];then
                 echo "[*****Back to main menu******]"
                 break;
-            elif [ $ad == 'y' ];then
-                echo "[File backup]";
-                file_backup;
-                break;
+            elif [ $dd == 'y' ];then
+            echo "[File backup]";
+            file_backup;
+            break;
             else
-                echo "[Please input 'y' or 'n'] ";
+            echo "[Please input 'y' or 'n'] ";
             fi
         done	
         ;;
@@ -246,11 +246,11 @@ while true; do
                 echo "[*****Back to main menu******]"
                 break;
             elif [ $dd == 'y' ];then
-                echo "[File update]";
-                file_update;
-                break;
+            echo "[File update]";
+            file_update;
+            break;
             else
-                echo "[Please input 'y' or 'n'] ";
+            echo "[Please input 'y' or 'n'] ";
             fi
         done	
     ;;
@@ -259,6 +259,6 @@ while true; do
         exit 0;
     ;;
     *)
-        echo "[Error input,please input 1-5!]"
+        echo "[Error input,please input 1-4!]"
     esac
 done

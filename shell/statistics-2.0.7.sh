@@ -36,8 +36,6 @@ while true; do
 	fi
 done
 
-echo "Choosed task log id: $id"
-
 orig=`mysql -udas_uq -pdas_uq das_uq $host -e "
 select TKL_BEGINTIME,TKL_ENDTIME from man_tasklog where tkl_tasklogid=$id limit 1;
 " 2>/dev/null`
