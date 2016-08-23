@@ -4,7 +4,7 @@
 void main()
 {
 	struct in_addr inp;
-	const char *ip_str = "10.152.69.206";
+	const char *ip_str = "127.0.0.1";
 	const char *ip_str_II = "10.152.69.205";
 
 	int res = inet_aton(ip_str, &inp);
