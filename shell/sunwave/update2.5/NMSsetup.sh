@@ -1,53 +1,117 @@
 #!/bin/sh
 
+#
+# if all processes are executed correctly, exit 0, else exit 1
+#
+
+HOME_PACKAGES="/home/packages/"
+
 homepage="
   1) create users;
   2) mysql setup;
-  3) 
-  4) 
-  5) 
-  6) 
+  3) omcweb setup;
+  4) das_uq setup
+  5) mysql client setup
+  6) systemalarm setup
+  7) ftp client setup
 "
 
-echo "setup and configuration"
-echo "
-please confirm the following packages are in /home/packages/:
-    MySQL-client-5.6.21-1.linux_glibc2.5.x86_64.rpm
-    MySQL-devel-5.6.21-1.linux_glibc2.5.x86_64.rpm
-    MySQL-devel-5.6.21-1.linux_glibc2.5.x86_64.rpm
-    MySQL-server-5.6.21-1.linux_glibc2.5.x86_64.rpm
-    MySQL-shared-5.6.22-1.el6.x86_64.rpm
-    pcre-devel-7.8-3.1.el6.x86_64.rpm
-    apache-tomcat-6.0.32.tar
-    omcweb/
-    das_uq/
-    jdk-6u27-linux-x64/
-    configuration files:
+function select_item()
+{
+    while true; do
+        read input; 
+    if [ -z $input ] || [ $input -gt 7 ] || [ $input -lt 1 ]; then
+            echo "[please input from 1 to 7]";
+        else
+            return $input
+        fi
+    done 
+}
+
+function confirm()
+{
+    while true; do
+        read input; 
+        if [ -z $input ];then
+            echo "[please input 'y' or 'n'] ";
+        elif [ $input == 'n' ];then
+            exit 1;
+        elif [ $input == 'y' ];then
+            break
+        else 
+            echo "[please input 'y' or 'n' ]";
+        fi
+    done 
+}
+
+function check_files()
+{
+    all_files=(
+        MySQL-client-5.6.21-1.linux_glibc2.5.x86_64.rpm
+        MySQL-devel-5.6.21-1.linux_glibc2.5.x86_64.rpm
+        MySQL-server-5.6.21-1.linux_glibc2.5.x86_64.rpm
+        MySQL-shared-5.6.22-1.el6.x86_64.rpm
+        pcre-devel-7.8-3.1.el6.x86_64.rpm
+        apache-tomcat-6.0.32.tar
+        omcweb/
+        das_uq/
+        jdk-6u27-linux-x64/
         server
         udp_check
         my.cnf
-        mysqlcheck"
-service iptables stop
-chkconfig iptables off
-echo "cd /home/packages/"
-cd /home/packages/
-chmod -R 755 *
-ls *
-echo "please select the item：1、create user；2、mysql setup;3、omcweb setup;4、app setup;5、mysql client setup;6、systemalarm setup;7、ftp setup"
-read selected
+        mysqlcheck)
+
+    cd $HOME_PACKAGES
+    ret=0
+    for i in ${all_files[@]}; do
+        ls $i
+        if [ $? != 0 ]; then
+            ret=1
+        fi
+    done
+
+    echo "Lack some files, exit."
+    exit 1
+}
+
+function pre_process()
+{
+    echo "stoping firewall..."
+    service iptables stop
+    chkconfig iptables off
+
+    echo "changing the files mode bits..."
+    chmod -R 755 $HOME_PACKAGES/*
+
+    echo "creating user 'das_uq'.."
+    useradd das_uq
+    echo das_uq |passwd --stdin das_uq
+    echo "creating user 'omcweb'.."
+    useradd omcweb
+    echo omcweb |passwd --stdin omcweb
+    echo "creating user 'dasftp'.."
+    useradd dasftp
+    echo dasftp |passwd --stdin dasftp
+}
+
+function deploy_mysql()
+{
+    rpm -e MySQL-server
+    rpm -e MySQL-client
+    rpm -e MySQL-devel
+    rpm -e MySQL-share
+}
+
+#check_files
+#pre_process
+
+echo "  ===== N M S s e t u p . s h ====="
+cd $HOME_PACKAGES
+echo "$homepage"
+select_item
+selected=$?
+exit
 case $selected in
-1)
-echo "create user，ctrl+c"
-useradd das_uq
-echo das_uq|passwd --stdin das_uq
-echo "das_uq is created successfully "
-useradd omcweb
-echo omcweb|passwd --stdin omcweb
-echo "omcweb is created successfully "
-useradd dasftp
-echo dasftp|passwd --stdin dasftp
-echo "dasftp is created successfully "
-;;
 2)
 echo "mysql setup"
 rpm -qa | grep -i 'mysql-' |xargs rpm -e --nodeps
