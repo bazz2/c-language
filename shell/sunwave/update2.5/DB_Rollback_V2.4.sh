@@ -23,10 +23,9 @@ function rollback()
 	cp -rf /home/work/backup/backup_V2.4_db/DB_V2.4.tar.gz /home/das_uq/
 	cd /home/das_uq/
 	tar xvfz DB_V2.4.tar.gz >/dev/null 2>&1
+    mv -rf sudoers /etc/
 	ls -l /home/das_uq/bin/systemalarm
-	ls -l /home/das_uq/bin/snmpTrapd
-	ls -l /home/das_uq/lib/libomcpublic.so
-	ls -l /home/das_uq/lib/libebdgdlmysql.so
+    ls -l /etc/sudoers
 	echo "[Rollback check OK? (y or n)]"
 	while true; do
 		read eb;

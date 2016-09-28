@@ -21,7 +21,9 @@ function file_backup()
 		echo "[ERROR: $backup_dir/DB_V2.4.tar.gz already exist!]"
 		return
 	fi
-	tar czvf $backup_dir/DB_V2.4.tar.gz bin/ lib/ etc/ tools/
+    cp /etc/sudoers .
+	tar czvf $backup_dir/DB_V2.4.tar.gz bin/ lib/ etc/ tools/ sudoers
+    rm sudoers
 	ls -l $backup_dir/DB_V2.4.tar.gz
 	echo "[files back check OK?,press 'y' or 'n' to continue!]"
 	while true; do
@@ -141,6 +143,15 @@ function file_update()
 	if [ $? == 0  ];then
 		let m++
 	fi
+    sudoers_num=`cat /etc/sudoers |grep das_uq |wc -l`
+    if [ $sudoers_num == 0 ]; then
+        sed -i 's/^Defaults.*requiretty$/\#Defaults requiretty/g' sudoers
+        sudoers_conf="
+            das_uq    ALL=(ALL)    ALL
+            %das_uq ALL=(ALL) NOPASSWD: ALL))
+        "
+        echo "$sudoers_conf" >>/etc/sudoers
+    fi
 	
 	rm -rf /home/das_uq/lib/libomcpublic.so
 	cp -rf $update_dir/libomcpublic.so /home/das_uq/lib
