@@ -14,8 +14,6 @@ fi
 
 for ip in ${all_servers[@]}; do
     echo "=========== processing $ip ============"
-    ssh das_uq@$ip "
-    "
 
     if [ $ip == "10.158.69.197" ]; then
         # APP03

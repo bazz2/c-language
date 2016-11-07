@@ -8,8 +8,8 @@ HOME_PACKAGES="/home/packages/"
 
 homepage="
   1) deploy web;
-  1) deploy app;
-  1) deploy db;
+  2) deploy app;
+  3) deploy db;
 "
 
 function select_item()
@@ -89,6 +89,21 @@ function setup_mysql_server_client()
 {
     echo "clear mysql"
     service mysql stop
+
+    mysql_num=0
+    ret=`rpm -qa|grep MySQL-client-5.6.21-1.linux_glibc2.5.x86_64 |wc -l`
+    mysql_num+=$ret
+    ret=`rpm -qa|grep MySQL-devel-5.6.21-1.linux_glibc2.5.x86_64 |wc -l`
+    mysql_num+=$ret
+    ret=`rpm -qa|grep MySQL-server-5.6.21-1.linux_glibc2.5.x86_64 |wc -l`
+    mysql_num+=$ret
+    ret=`rpm -qa|grep MySQL-shared-5.6.22-1.el6.x86_64.rpm |wc -l`
+    mysql_num+=$ret
+
+    if [ $mysql_num -eq 4 ]; then
+        return
+    fi
+
     rpm -e MySQL-server --nodeps
     rpm -e MySQL-client --nodeps
     rpm -e MySQL-devel --nodeps
@@ -133,6 +148,18 @@ EOF
 
 function setup_mysql_client()
 {
+    mysql_num=0
+    ret=`rpm -qa|grep MySQL-client-5.6.21-1.linux_glibc2.5.x86_64 |wc -l`
+    mysql_num+=$ret
+    ret=`rpm -qa|grep MySQL-devel-5.6.21-1.linux_glibc2.5.x86_64 |wc -l`
+    mysql_num+=$ret
+    ret=`rpm -qa|grep MySQL-shared-5.6.22-1.el6.x86_64.rpm |wc -l`
+    mysql_num+=$ret
+
+    if [ $mysql_num -eq 3 ]; then
+        return
+    fi
+
     echo "clear mysql"
     rpm -e MySQL-client --nodeps
     rpm -e MySQL-devel --nodeps
@@ -176,10 +203,10 @@ function setup_systemalarm()
     cd /home/
     chown -R das_uq:das_uq das_uq/
     chmod -R 775 das_uq
-    echo "systemalarm installed"
-    sed -i 's/^Defaults.*requiretty$/\#Defaults requiretty/g' sudoers
+
     sudoers_num=`cat /etc/sudoers |grep das_uq |wc -l`
     if [ $sudoers_num == 0 ]; then
+        sed -i 's/^Defaults.*requiretty$/\#Defaults requiretty/g' sudoers
         sudoers_conf="
             das_uq    ALL=(ALL)    ALL
             %das_uq ALL=(ALL) NOPASSWD: ALL))
@@ -300,7 +327,6 @@ function deploy_db()
 {
     setup_mysql_server_client
     setup_systemalarm
-    setup_mysql_server_client
 }
 
 echo "  ===== N M S s e t u p . s h ====="

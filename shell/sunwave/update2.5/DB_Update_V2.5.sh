@@ -21,9 +21,13 @@ function file_backup()
 		echo "[ERROR: $backup_dir/DB_V2.4.tar.gz already exist!]"
 		return
 	fi
-    cp /etc/sudoers .
-	tar czvf $backup_dir/DB_V2.4.tar.gz bin/ lib/ etc/ tools/ sudoers
-    rm sudoers
+    cp -rf /etc/sudoers .
+    cp -rf /etc/my.cnf .
+    cp -rf /etc/init.d/mysql .
+	tar czvf $backup_dir/DB_V2.4.tar.gz bin/ lib/ etc/ tools/ sudoers my.cnf mysql
+    rm -rf sudoers
+    rm -rf my.cnf
+    rm -rf mysql
 	ls -l $backup_dir/DB_V2.4.tar.gz
 	echo "[files back check OK?,press 'y' or 'n' to continue!]"
 	while true; do
@@ -132,12 +136,13 @@ function file_update()
 	fi
 
 	echo "[Updating...]"
-	rm -rf /home/das_uq/bin/snmpTrapd
-	cp -rf $update_dir/snmpTrapd /home/das_uq/bin
+	
+    rm -rf /etc/my.cnf
+    cp -rf $update_dir/my.cnf /etc/
 	if [ $? == 0  ];then
 		let m++
 	fi
-	
+
 	rm -rf /home/das_uq/bin/systemalarm
 	cp -rf $update_dir/systemalarm /home/das_uq/bin
 	if [ $? == 0  ];then
@@ -153,42 +158,16 @@ function file_update()
         echo "$sudoers_conf" >>/etc/sudoers
     fi
 	
-	rm -rf /home/das_uq/lib/libomcpublic.so
-	cp -rf $update_dir/libomcpublic.so /home/das_uq/lib
-	if [ $? == 0  ];then
-		let m++
-	fi
-	
-	rm -rf /home/das_uq/lib/libebdgdlmysql.so
-	cp -rf $update_dir/libebdgdlmysql.so /home/das_uq/lib
-	if [ $? == 0  ];then
-		let m++
-	fi
-
 	echo "[$m files copied!]"
 	echo "[Files update check...]"
 	chmod +x /home/das_uq/bin
 	chown -R das_uq:das_uq /home/das_uq/
 	
-	ls -l /home/das_uq/bin/snmpTrapd
-	if [ $? == 0  ];then
-		let n++
-	fi
 	ls -l /home/das_uq/bin/systemalarm
 	if [ $? == 0  ];then
 		let n++
 	fi
 	
-	ls -l /home/das_uq/lib/libomcpublic.so
-	if [ $? == 0  ];then
-		let n++
-	fi
-	
-	ls -l /home/das_uq/lib/libebdgdlmysql.so
-	if [ $? == 0  ];then
-		let n++
-	fi
-			
 	echo "[$n files listed!]"
 	echo "[Files update check OK? (y or n)]"
 	while true; do
@@ -205,24 +184,6 @@ function file_update()
 			echo "[Please input 'y' or 'n'] "
 		fi
 	done
-	echo "[snmpTrapd start]"
-	su - das_uq -c omcstart
-	echo "[Is snmpTrapd start successful? (y or n)]"
-	while true
-	do
-		read dc;
-		if [ -z $dc ];then
-			echo "[Please input 'y' or 'n']";
-		elif [ $dc == 'n' ];then
-			echo "[ERROR: program teminated, please execute 'snmpTrapd start' by hand!]"
-			exit 0;
-		elif [ $dc == 'y' ];then
-			echo "[snmpTrapd start successfully!]";
-			break
-		else
-			echo "[Please input 'y' or 'n']";
-		fi
-	done	
 }
 
 while true; do
