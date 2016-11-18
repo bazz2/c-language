@@ -26,18 +26,19 @@ from prettytable import PrettyTable
 
 class TrainCollection(object):
     header = 'train station time duration first second softsleep hardsleep hardsit'.split()
+    header = '车次 车站 时间 历时 一等 二等 软卧 硬卧 硬座'.split()
     def __init__(self, rows):
         self.rows = rows
 
     def _get_duration(self, row):
         duration = row.get('lishi').replace(':', 'h') + 'm'
-        if duration.startswitch('00'):
+        if duration.startswith('00'):
             return duration[4:]
-        if duration.startswitch('0'):
+        if duration.startswith('0'):
             return duration[1:]
         return duration
 
-    def colored(color, text):
+    def colored(self, color, text):
         table = {
             'red': '\033[91m',
             'green': '\033[92m',
@@ -47,18 +48,23 @@ class TrainCollection(object):
         nc = table.get('nc')
         return ''.join([cv, text, nc])
 
-    @property
     def trains(self):
-        print(1)
         for row1 in self.rows:
             row = row1['queryLeftNewDTO']
-            print(2)
-            print(row['station_train_code'], row['from_station_name'], row['to_station_name'], row['start_time'], row['arrive_time'])
-            """
             train = [
                 row['station_train_code'],
-                '\n'.join([colored('green', row['from_station_name']), colored('red', row['to_station_name']) ]),
-                '\n'.join([colored('green', row['start_time']), colored('red', row['arrive_time']) ]),
+                '\n'.join([
+                    self.colored('green', row['from_station_name']),
+                    self.colored('red', row['to_station_name'])
+                    #row['from_station_name'],
+                    #row['to_station_name']
+                ]),
+                '\n'.join([
+                    self.colored('green', row['start_time']),
+                    self.colored('red', row['arrive_time'])
+                    #row['start_time'],
+                    #row['arrive_time']
+                ]),
                 self._get_duration(row),
                 row['zy_num'],
                 row['ze_num'],
@@ -67,17 +73,13 @@ class TrainCollection(object):
                 row['yz_num']
             ]
             yield train
-            """
 
     def pretty_print(self):
         pt = PrettyTable()
         pt._set_field_names(self.header)
-        """
-        for train in self.trains:
-            print("========", type(train))
+        for train in self.trains():
             pt.add_row(train)
         print(pt)
-        """
 
 
 def cli():
